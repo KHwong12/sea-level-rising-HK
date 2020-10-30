@@ -60,6 +60,23 @@ VH_10m_matrix %>%
   plot_map()
 ```
 
+Combined data
+```{r}
+
+edited_5m_VH <- raster::raster("data/data-raw/edited_5m_VH.tif")
+
+edited_10m_VH <- raster::aggregate(edited_5m_VH, 2)
+
+VH_10m_matrix <- raster_to_matrix(edited_10m_VH)
+
+```
+
+```{r}
+VH_10m_matrix %>%
+  sphere_shade(texture = "imhof1") %>%
+  plot_map()
+```
+
 ---
 
 ## Compute shadow
@@ -87,9 +104,20 @@ plot_map(VH_10m_amb_z1)
 
 ZSCALE <- 7.5
 
-VH_10m_shadow <- ray_shade(VH_10m_matrix, zscale = ZSCALE, lambert = TRUE)
-VH_10m_amb <- ambient_shade(VH_10m_matrix, zscale = ZSCALE)
+ZSCALE_SHADOW <- 1.5
+
+VH_10m_shadow <- ray_shade(VH_10m_matrix, zscale = ZSCALE_SHADOW, lambert = TRUE)
+VH_10m_amb <- ambient_shade(VH_10m_matrix, zscale = ZSCALE_SHADOW)
 ```
+
+View shadows
+```{r}
+par(mfrow = c(1, 2))
+
+plot_map(VH_10m_shadow)
+plot_map(VH_10m_amb)
+```
+
 
 
 Shadow opacity tests
@@ -122,11 +150,13 @@ VH_10m_matrix %>%
 
 
 ```{r}
+WATER_DEPTH = 2.1
+
 VH_10m_matrix %>%
   sphere_shade(texture = "imhof1", sunangle = 315) %>%
   add_shadow(VH_10m_shadow, .75) %>%
   add_shadow(VH_10m_amb, .25) %>%
-  plot_3d(VH_10m_matrix, zscale = ZSCALE, fov = 0, theta = 45, phi = 35,
+  plot_3d(VH_10m_matrix, zscale = ZSCALE, fov = 0, theta = -45, phi = 35,
             windowsize = c(1920, 1200), zoom = 0.6,
             solid = TRUE, soliddepth = -50, solidcolor = "grey20")
 
@@ -134,12 +164,13 @@ render_snapshot()
 
 
 render_water(VH_10m_matrix, zscale = ZSCALE,
-             waterdepth = 2.1, wateralpha = 0.5, watercolor = "turquoise4",
+             waterdepth = WATER_DEPTH, wateralpha = 0.5, watercolor = "turquoise4",
              waterlinecolor = "#ffffff", waterlinealpha = 0.5, linewidth = 4)
 
 # "VH_Axo_Zoomtest.png"
 
-render_snapshot(title_text = paste0("VH_Axo_Zoomtest"),
+render_snapshot(
+                title_text = paste(WATER_DEPTH, "m"),
                 title_position = "northeast",
                 title_font = "Helvetica",
                 title_size = 72,
@@ -150,14 +181,14 @@ render_snapshot(title_text = paste0("VH_Axo_Zoomtest"),
 ### Top
 
 ```{r}
-WATER_DEPTH = 5.1
+WATER_DEPTH = 2
 
 VH_10m_matrix %>%
   sphere_shade(texture = "imhof1", sunangle = 315) %>%
   add_shadow(VH_10m_shadow, .8) %>%
   add_shadow(VH_10m_amb, .25) %>%
   plot_3d(VH_10m_matrix, zscale = ZSCALE, fov = 0, theta = 0, phi = 90, 
-            windowsize = c(2560, 1600), zoom = 0.6)
+            windowsize = c(2560, 1600), zoom = 0.65)
             # solid = TRUE, soliddepth = -50, solidcolor = "grey20")
 
 render_snapshot()
@@ -168,7 +199,7 @@ render_water(VH_10m_matrix, zscale = ZSCALE,
              waterdepth = WATER_DEPTH, wateralpha = 0.5, watercolor = "turquoise4",
              waterlinecolor = NULL)
 
-render_snapshot("test_5p1m.png",
+render_snapshot("2m.png",
                 title_text = paste(WATER_DEPTH, "m"),
                 title_position = "northeast",
                 title_font = "Helvetica",
@@ -217,13 +248,17 @@ THETAS <- 45 * -cos(seq(0, 2*pi, length.out = FRAMES_NUM))
 
 ### Top view
 
+If the sea level lowering part is just an identical mirror image to sea level rising, just need to render the first half, then play in reverse order when combining images
+
 ```{r, echo = FALSE}
 
 # generate .png frame images
-img_frames <- paste0("VH_Top_uni/VHTop_", seq_len(FRAMES_NUM), ".png")
+img_frames <- paste0("VH_Top_uni_editedDTM/VHTop_", seq_len(FRAMES_NUM), ".png")
 
-for (i in seq_len(FRAMES_NUM)) {
+for (i in seq_len(FRAMES_NUM/2)) {
   message(paste(" - Generating image", i, "of", FRAMES_NUM))
+  
+  message(paste(" - Sea level of", format(round(WATERDEPTHS_UNISPEED[i] - 0.1, 2), nsmall = 2), "m"))
   
   start_time <- Sys.time()
 
@@ -232,7 +267,7 @@ for (i in seq_len(FRAMES_NUM)) {
     add_shadow(VH_10m_shadow, .75) %>%
     add_shadow(VH_10m_amb, .25) %>%
     plot_3d(VH_10m_matrix, zscale = ZSCALE, fov = 0, theta = 0, phi = 90, 
-            windowsize = c(2560, 1600), zoom = 0.6)
+            windowsize = c(2560, 1600), zoom = 0.65)
   
   render_snapshot()
   
@@ -261,11 +296,30 @@ for (i in seq_len(FRAMES_NUM)) {
   print(end_time - start_time)
 }
 
+
+```
+
+```{r}
+# generate .png frame images
+img_frames_rise <- paste0("VH_Top_uni_editedDTM/VHTop_", seq_len(FRAMES_NUM/2), ".png")
+
+img_frame_sequence <- c(
+  # rising
+  img_frames_rise,
+  # stop at top for 0.5 sec
+  rep(paste0("VH_Top_uni_editedDTM/VHTop_", FRAMES_NUM/2, ".png"), 6),
+  # dropping
+  rev(img_frames_rise),
+  # stop at bottom for 0.5 sec
+  rep(paste0("VH_Top_uni_editedDTM/VHTop_", 1, ".png"), 6))
+
 # write video
-magick::image_write_video(magick::image_read(img_frames), 
-                          path = "VH_sealevel_Top_v3_uni_f12.mp4", 
+magick::image_write_video(magick::image_read(img_frame_sequence), 
+                          path = "VH_sealevel_Top_uni_editedDTM.mp4", 
                           framerate = 12)
 ```
+
+
 
 ### Axo view
 
@@ -274,8 +328,10 @@ magick::image_write_video(magick::image_read(img_frames),
 # generate .png frame images
 img_frames <- paste0("VH_Axo_uni/VHAxo_", seq_len(FRAMES_NUM), ".png")
 
-for (i in seq_len(FRAMES_NUM)) {
+for (i in seq_len(FRAMES_NUM/2)) {
   message(paste(" - Generating image", i, "of", FRAMES_NUM))
+          
+  message(paste(" - Sea level of", format(round(WATERDEPTHS_UNISPEED[i] - 0.1, 2), nsmall = 2), "m"))
   
   start_time <- Sys.time()
 
@@ -287,7 +343,6 @@ for (i in seq_len(FRAMES_NUM)) {
             windowsize = c(1920, 1200), zoom = 0.6,
             solid = TRUE, soliddepth = -50, solidcolor = "grey20")
 
-  
   render_snapshot()
   
   # Add water
@@ -316,11 +371,29 @@ for (i in seq_len(FRAMES_NUM)) {
 
 # write video
 magick::image_write_video(magick::image_read(img_frames), 
-                          path = "VH_sealevel_Axo_uni_f12.mp4", 
+                          path = "VH_sealevel_Axo_uni_editedDTM.mp4", 
                           framerate = 12)
 ```
 
+```{r}
+# generate .png frame images
+img_frames_rise <- paste0("VH_Axo_uni_editedDTM/VHTop_", seq_len(FRAMES_NUM/2), ".png")
 
+img_frame_sequence <- c(
+  # rising
+  img_frames_rise,
+  # stop at top for 0.5 sec
+  rep(paste0("VH_Axo_uni_editedDTM/VHAxo_", FRAMES_NUM/2, ".png"), 6),
+  # dropping
+  rev(img_frames_rise),
+  # stop at bottom for 0.5 sec
+  rep(paste0("VH_Axo_uni_editedDTM/VHAxo__", 1, ".png"), 6))
+
+# write video
+magick::image_write_video(magick::image_read(img_frame_sequence), 
+                          path = "VH_sealevel_Axo_uni_editedDTM.mp4", 
+                          framerate = 12)
+```
 
 ### Axo view, changing view angle
 
