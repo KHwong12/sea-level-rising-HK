@@ -1,0 +1,377 @@
+---
+title: "sealevel_VH"
+author: "Kenneth Wong"
+date: "10/28/2020"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(raster)
+library(rayshader)
+library(rayrender)
+library(rgdal)
+library(magick)
+
+library(gifski)
+```
+
+```{r}
+VH_5m <- raster::raster("data/data-raw/VictoriaHarbour_5m_rect.tif")
+
+VH_10m <- aggregate(VH_5m, 2)
+
+VH_10m_matrix <- raster_to_matrix(VH_10m)
+```
+
+Original 10m DTM
+
+```{r}
+
+demold_10m_VH <- raster::raster("data/data-raw/demold_10m_VH.tif")
+VH_10m_matrix <- raster_to_matrix(demold_10m_VH)
+
+```
+
+```{r}
+VH_10m_matrix %>%
+  sphere_shade(texture = "imhof1") %>%
+  plot_map()
+```
+
+
+Lands Department 5m DTM, aggregated to 10m resolution in ArcGIS
+
+```{r}
+
+Lands_10m_VH <- raster::raster("data/data-raw/Lands_10m_VH.tif")
+VH_10m_matrix <- raster_to_matrix(Lands_10m_VH)
+
+```
+
+
+```{r}
+VH_10m_matrix %>%
+  sphere_shade(texture = "imhof1") %>%
+  plot_map()
+```
+
+---
+
+## Compute shadow
+
+
+```{r}
+VH_10m_shadow_z1 <- ray_shade(VH_10m_matrix, zscale = 1, lambert = TRUE)
+VH_10m_amb_z1 <- ambient_shade(VH_10m_matrix, zscale = 1)
+
+
+
+
+par(mfrow = c(1, 2))
+
+plot_map(VH_10m_shadow_z1)
+plot_map(VH_10m_amb_z1)
+```
+
+
+---
+
+## static view
+
+```{r}
+
+ZSCALE <- 7.5
+
+VH_10m_shadow <- ray_shade(VH_10m_matrix, zscale = ZSCALE, lambert = TRUE)
+VH_10m_amb <- ambient_shade(VH_10m_matrix, zscale = ZSCALE)
+```
+
+
+Shadow opacity tests
+
+```{r}
+par(mfrow = c(1, 2))
+
+VH_10m_matrix %>%
+  sphere_shade(zscale = 3, texture = "imhof1") %>%
+  add_water(
+    detect_water(VH_10m_matrix, min_area = length(VH_10m_matrix)/100),
+    color = "turquoise4"
+    ) %>%
+  add_shadow(VH_10m_shadow, .5) %>%
+  add_shadow(VH_10m_amb, .25) %>%
+  plot_map()
+
+VH_10m_matrix %>%
+  sphere_shade(zscale = 3, texture = "imhof1") %>%
+  add_water(
+    detect_water(VH_10m_matrix, min_area = length(VH_10m_matrix)/100),
+    color = "turquoise4"
+    ) %>%
+  add_shadow(VH_10m_shadow, .4) %>%
+  add_shadow(VH_10m_amb, .2) %>%
+  plot_map()
+
+```
+
+
+
+```{r}
+VH_10m_matrix %>%
+  sphere_shade(texture = "imhof1", sunangle = 315) %>%
+  add_shadow(VH_10m_shadow, .75) %>%
+  add_shadow(VH_10m_amb, .25) %>%
+  plot_3d(VH_10m_matrix, zscale = ZSCALE, fov = 0, theta = 45, phi = 35,
+            windowsize = c(1920, 1200), zoom = 0.6,
+            solid = TRUE, soliddepth = -50, solidcolor = "grey20")
+
+render_snapshot()
+
+
+render_water(VH_10m_matrix, zscale = ZSCALE,
+             waterdepth = 2.1, wateralpha = 0.5, watercolor = "turquoise4",
+             waterlinecolor = "#ffffff", waterlinealpha = 0.5, linewidth = 4)
+
+# "VH_Axo_Zoomtest.png"
+
+render_snapshot(title_text = paste0("VH_Axo_Zoomtest"),
+                title_position = "northeast",
+                title_font = "Helvetica",
+                title_size = 72,
+                clear = TRUE)
+
+```
+
+### Top
+
+```{r}
+WATER_DEPTH = 5.1
+
+VH_10m_matrix %>%
+  sphere_shade(texture = "imhof1", sunangle = 315) %>%
+  add_shadow(VH_10m_shadow, .8) %>%
+  add_shadow(VH_10m_amb, .25) %>%
+  plot_3d(VH_10m_matrix, zscale = ZSCALE, fov = 0, theta = 0, phi = 90, 
+            windowsize = c(2560, 1600), zoom = 0.6)
+            # solid = TRUE, soliddepth = -50, solidcolor = "grey20")
+
+render_snapshot()
+# render_snapshot("VH_noWwater.png", clear = TRUE)
+
+# No need to render waterline for top view
+render_water(VH_10m_matrix, zscale = ZSCALE,
+             waterdepth = WATER_DEPTH, wateralpha = 0.5, watercolor = "turquoise4",
+             waterlinecolor = NULL)
+
+render_snapshot("test_5p1m.png",
+                title_text = paste(WATER_DEPTH, "m"),
+                title_position = "northeast",
+                title_font = "Helvetica",
+                title_size = 90,
+                clear = TRUE)
+
+```
+
+
+---
+
+## Animation
+
+### Animation params
+
+From https://wcmbishop.github.io/rayshader-demo/
+
+```{r}
+FRAMES_NUM <- 120
+
+ZSCALE <- 7.5
+
+MAX_SEALEVEL <- 5
+
+# Smooth sine/cosine raise
+# Plus 0.1 since waterdepth at 0 will "interlace" with the sea surface
+# length.out = desired length of the sequence
+WATERDEPTHS_SMOOTH <- MAX_SEALEVEL/2 - MAX_SEALEVEL/2 * cos(seq(0, 2*pi, length.out = FRAMES_NUM)) + 2.1
+
+# WATERDEPTHS_SMOOTH_2 <- 10 * sin(seq(0, pi, length.out = FRAMES_NUM)) + 2.1
+
+# Uniform raising speed
+WATERDEPTHS_RAISE <- seq(0, 1, length.out = FRAMES_NUM/2) * MAX_SEALEVEL + 2.1
+
+# rev() to reverse sequence order (i.e. decreasing water level)
+WATERDEPTHS_UNISPEED <- c(WATERDEPTHS_RAISE, rev(WATERDEPTHS_RAISE))
+
+
+# From 315 (-45) to 45
+THETAS <- 45 * -cos(seq(0, 2*pi, length.out = FRAMES_NUM))
+
+
+```
+
+
+
+### Top view
+
+```{r, echo = FALSE}
+
+# generate .png frame images
+img_frames <- paste0("VH_Top_uni/VHTop_", seq_len(FRAMES_NUM), ".png")
+
+for (i in seq_len(FRAMES_NUM)) {
+  message(paste(" - Generating image", i, "of", FRAMES_NUM))
+  
+  start_time <- Sys.time()
+
+  VH_10m_matrix %>%
+    sphere_shade(texture = "imhof1", sunangle = 315) %>%
+    add_shadow(VH_10m_shadow, .75) %>%
+    add_shadow(VH_10m_amb, .25) %>%
+    plot_3d(VH_10m_matrix, zscale = ZSCALE, fov = 0, theta = 0, phi = 90, 
+            windowsize = c(2560, 1600), zoom = 0.6)
+  
+  render_snapshot()
+  
+  # Add water
+  render_water(VH_10m_matrix, zscale = ZSCALE,
+               waterdepth = WATERDEPTHS_UNISPEED[i], wateralpha = 0.5, watercolor = "turquoise4",
+               # No need to render waterline for top view
+               waterlinecolor = NULL)
+
+  
+  # Render final view
+  render_snapshot(img_frames[i],
+                  # In DTM, the base sea level about 2.1m (assume it equal to 0mPD)
+                  # Fix to always have 2 decimals
+                  # https://stackoverflow.com/questions/3443687/formatting-decimal-places-in-r
+                  title_text = paste(format(round(WATERDEPTHS_UNISPEED[i] - 2.1, 2), nsmall = 2), "m"),
+                  title_position = "northeast",
+                  title_font = "Helvetica",
+                  title_size = 90,
+                  clear = TRUE)
+  
+  rgl::clear3d()
+  
+  end_time <- Sys.time()
+  
+  print(end_time - start_time)
+}
+
+# write video
+magick::image_write_video(magick::image_read(img_frames), 
+                          path = "VH_sealevel_Top_v3_uni_f12.mp4", 
+                          framerate = 12)
+```
+
+### Axo view
+
+```{r, echo = FALSE}
+
+# generate .png frame images
+img_frames <- paste0("VH_Axo_uni/VHAxo_", seq_len(FRAMES_NUM), ".png")
+
+for (i in seq_len(FRAMES_NUM)) {
+  message(paste(" - Generating image", i, "of", FRAMES_NUM))
+  
+  start_time <- Sys.time()
+
+  VH_10m_matrix %>%
+    sphere_shade(texture = "imhof1", sunangle = 315) %>%
+    add_shadow(VH_10m_shadow, .75) %>%
+    add_shadow(VH_10m_amb, .25) %>%
+    plot_3d(VH_10m_matrix, zscale = ZSCALE, fov = 0, theta = -45, phi = 35,
+            windowsize = c(1920, 1200), zoom = 0.6,
+            solid = TRUE, soliddepth = -50, solidcolor = "grey20")
+
+  
+  render_snapshot()
+  
+  # Add water
+  render_water(VH_10m_matrix, zscale = ZSCALE,
+               waterdepth = WATERDEPTHS_UNISPEED[i], wateralpha = 0.5, watercolor = "turquoise4",
+               waterlinecolor = "#ffffff", waterlinealpha = 0.5, linewidth = 4)
+  
+  # Render final view
+  render_snapshot(img_frames[i],
+                  # In DTM, the base sea level about 2.1m (assume it equal to 0mPD)
+                  # Fix to always have 2 decimals
+                  # https://stackoverflow.com/questions/3443687/formatting-decimal-places-in-r
+                  title_text = paste(format(round(WATERDEPTHS_UNISPEED[i] - 2.1, 2), nsmall = 2), "m"),
+                  title_position = "northeast",
+                  title_font = "Helvetica",
+                  title_size = 72,
+                  clear = TRUE)
+  
+  rgl::clear3d()
+  
+  end_time <- Sys.time()
+  
+  print(end_time - start_time)
+}
+
+
+# write video
+magick::image_write_video(magick::image_read(img_frames), 
+                          path = "VH_sealevel_Axo_uni_f12.mp4", 
+                          framerate = 12)
+```
+
+
+
+### Axo view, changing view angle
+
+```{r, echo = FALSE}
+
+# generate .png frame images
+img_frames <- paste0("VH_Axo_uni_theta/VHAxoTheta_", seq_len(FRAMES_NUM), ".png")
+
+for (i in seq_len(FRAMES_NUM)) {
+  message(paste(" - Generating image", i, "of", FRAMES_NUM))
+  
+  start_time <- Sys.time()
+
+  VH_10m_matrix %>%
+    sphere_shade(texture = "imhof1", sunangle = 315) %>%
+    add_shadow(VH_10m_shadow, .75) %>%
+    add_shadow(VH_10m_amb, .25) %>%
+    plot_3d(VH_10m_matrix, zscale = ZSCALE, fov = 0, theta = THETAS[i], phi = 35,
+            windowsize = c(1920, 1200), zoom = 0.6,
+            solid = TRUE, soliddepth = -50, solidcolor = "grey20")
+
+  
+  render_snapshot()
+  
+  # Add water
+  render_water(VH_10m_matrix, zscale = ZSCALE,
+               waterdepth = WATERDEPTHS_UNISPEED[i], wateralpha = 0.5, watercolor = "turquoise4",
+               waterlinecolor = "#ffffff", waterlinealpha = 0.5, linewidth = 4)
+  
+  # Render final view
+  render_snapshot(img_frames[i],
+                  # In DTM, the base sea level about 2.1m (assume it equal to 0mPD)
+                  # Fix to always have 2 decimals
+                  # https://stackoverflow.com/questions/3443687/formatting-decimal-places-in-r
+                  title_text = paste(format(round(WATERDEPTHS_SMOOTH[i] - 2.1, 2), nsmall = 2), "m"),
+                  title_position = "northeast",
+                  title_font = "Helvetica",
+                  title_size = 72,
+                  clear = TRUE)
+  
+  rgl::clear3d()
+  
+  end_time <- Sys.time()
+  
+  print(end_time - start_time)
+}
+
+
+# write video
+magick::image_write_video(magick::image_read(img_frames), 
+                          path = "VH_sealevel_Axo_uni_phi_f30.mp4", 
+                          framerate = 30)
+```
+
