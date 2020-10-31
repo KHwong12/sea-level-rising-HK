@@ -11,6 +11,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+library(tidyverse)
+
 library(raster)
 library(rayshader)
 library(rayrender)
@@ -53,14 +55,26 @@ VH_10m_matrix <- raster_to_matrix(Lands_10m_VH)
 
 ```
 
+Smoothed Lands DTM
+
+Definition of 0m in DTM: 0 meter above HK Principal Datum
+`MEAN_SEA_LEVEL`: 1.30 mPD
+
+Heights are shown in metres above the Hong Kong Principal Datum (HKPD). For general reference, the Mean Sea Level is about 1.3 metres above the HKPD.
+(https://www.landsd.gov.hk/mapping/en/download/data/iB50000_Data_Dictionary-GMLv.1.0.pdf)
+
 
 ```{r}
-VH_10m_matrix %>%
-  sphere_shade(texture = "imhof1") %>%
-  plot_map()
+
+Lands_10m_smooth_VH <- raster::raster("data/data-mid/Lands_10m_VH_gaus_sdp5_r2.tif")
+
+VH_10m_matrix <- raster_to_matrix(Lands_10m_smooth_VH)
+
 ```
 
-Combined data
+
+
+Combined DTM (Lands 5m + spot height)
 ```{r}
 
 edited_5m_VH <- raster::raster("data/data-raw/edited_5m_VH.tif")
@@ -150,7 +164,7 @@ VH_10m_matrix %>%
 
 
 ```{r}
-WATER_DEPTH = 2.1
+WATER_DEPTH = 4.9
 
 VH_10m_matrix %>%
   sphere_shade(texture = "imhof1", sunangle = 315) %>%
@@ -181,7 +195,7 @@ render_snapshot(
 ### Top
 
 ```{r}
-WATER_DEPTH = 2
+WATER_DEPTH = 0.1
 
 VH_10m_matrix %>%
   sphere_shade(texture = "imhof1", sunangle = 315) %>%
@@ -199,7 +213,9 @@ render_water(VH_10m_matrix, zscale = ZSCALE,
              waterdepth = WATER_DEPTH, wateralpha = 0.5, watercolor = "turquoise4",
              waterlinecolor = NULL)
 
-render_snapshot("2m.png",
+# "5p1m_Lands10m.png",
+
+render_snapshot(
                 title_text = paste(WATER_DEPTH, "m"),
                 title_position = "northeast",
                 title_font = "Helvetica",
@@ -208,6 +224,12 @@ render_snapshot("2m.png",
 
 ```
 
+---
+
+## Notes on sea level
+
+In edited hybrid model, base sea level = 2
+In Lands DTM, base sea level = 0
 
 ---
 
@@ -217,34 +239,81 @@ render_snapshot("2m.png",
 
 From https://wcmbishop.github.io/rayshader-demo/
 
+#### For edited DTM
+
 ```{r}
 FRAMES_NUM <- 120
 
 ZSCALE <- 7.5
 
-MAX_SEALEVEL <- 5
+RISE_METERS <- 5
+
+# In edited DTM, the base sea level about 2m (assume it equal to 0mPD)
+MEAN_SEA_LEVEL <- 2
+
+# Plus epsilon (0.01-0.1) since waterdepth at 0 will "interlace" with the sea surface
+EPSILON <- 0.1
 
 # Smooth sine/cosine raise
 # Plus 0.1 since waterdepth at 0 will "interlace" with the sea surface
 # length.out = desired length of the sequence
-WATERDEPTHS_SMOOTH <- MAX_SEALEVEL/2 - MAX_SEALEVEL/2 * cos(seq(0, 2*pi, length.out = FRAMES_NUM)) + 2.1
+WATERDEPTHS_SMOOTH <- RISE_METERS/2 - RISE_METERS/2 * cos(seq(0, 2*pi, length.out = FRAMES_NUM)) + MEAN_SEA_LEVEL + EPSILON
 
 # WATERDEPTHS_SMOOTH_2 <- 10 * sin(seq(0, pi, length.out = FRAMES_NUM)) + 2.1
 
 # Uniform raising speed
-WATERDEPTHS_RAISE <- seq(0, 1, length.out = FRAMES_NUM/2) * MAX_SEALEVEL + 2.1
+WATERDEPTHS_RISE <- seq(0, 1, length.out = FRAMES_NUM/2) * RISE_METERS + MEAN_SEA_LEVEL + EPSILON
 
 # rev() to reverse sequence order (i.e. decreasing water level)
-WATERDEPTHS_UNISPEED <- c(WATERDEPTHS_RAISE, rev(WATERDEPTHS_RAISE))
+WATERDEPTHS_UNISPEED <- c(WATERDEPTHS_RISE, rev(WATERDEPTHS_RISE))
 
 
 # From 315 (-45) to 45
 THETAS <- 45 * -cos(seq(0, 2*pi, length.out = FRAMES_NUM))
 
-
 ```
 
 
+#### For Lands 10m DTM (both smoothed/non-smoothed)
+
+Changes in `MEAN_SEA_LEVEL` and `EPSILON`
+
+Notes on definition of sea level
+http://www.geodetic.gov.hk/smo/gsi/data/pdf/explanatorynotes_c.pdf
+
+
+```{r}
+FRAMES_NUM <- 120
+
+ZSCALE <- 7.5
+
+# Lands DTM use HKPD as 0
+# Mean Sea Level defined by SMO is 1.30 mPD
+MEAN_SEA_LEVEL <- 1.30
+
+# Plus epsilon since waterdepth at 0m will "interlace" with the sea surface
+EPSILON <- 0.01
+
+# meters rise from current sea level
+RISE_METERS <- 5
+
+# Smooth sine/cosine raise
+# length.out = desired length of the sequence
+WATERDEPTHS_SMOOTH <- RISE_METERS/2 - RISE_METERS/2 * cos(seq(0, 2*pi, length.out = FRAMES_NUM)) + MEAN_SEA_LEVEL + EPSILON
+
+# WATERDEPTHS_SMOOTH_2 <- 10 * sin(seq(0, pi, length.out = FRAMES_NUM)) + 2.1
+
+# Uniform raising speed
+WATERDEPTHS_RISE <- (seq(0, 1, length.out = FRAMES_NUM/2) * RISE_METERS) + MEAN_SEA_LEVEL + EPSILON
+
+# rev() to reverse sequence order (i.e. decreasing water level)
+WATERDEPTHS_UNISPEED <- c(WATERDEPTHS_RISE, rev(WATERDEPTHS_RISE))
+
+
+# From 315 (-45) to 45
+THETAS <- 45 * -cos(seq(0, 2*pi, length.out = FRAMES_NUM))
+
+```
 
 ### Top view
 
@@ -253,12 +322,12 @@ If the sea level lowering part is just an identical mirror image to sea level ri
 ```{r, echo = FALSE}
 
 # generate .png frame images
-img_frames <- paste0("VH_Top_uni_editedDTM/VHTop_", seq_len(FRAMES_NUM), ".png")
+img_frames <- paste0("VH_Top_uni_Lands10m_smooth/VHTop_", seq_len(FRAMES_NUM), ".png")
 
 for (i in seq_len(FRAMES_NUM/2)) {
-  message(paste(" - Generating image", i, "of", FRAMES_NUM))
+  message(paste(" - Generating image", i, "of", FRAMES_NUM/2))
   
-  message(paste(" - Sea level of", format(round(WATERDEPTHS_UNISPEED[i] - 0.1, 2), nsmall = 2), "m"))
+  message(paste("     ", WATERDEPTHS_UNISPEED[i] - (MEAN_SEA_LEVEL + EPSILON), "m rise in sea level"))
   
   start_time <- Sys.time()
 
@@ -283,7 +352,7 @@ for (i in seq_len(FRAMES_NUM/2)) {
                   # In DTM, the base sea level about 2.1m (assume it equal to 0mPD)
                   # Fix to always have 2 decimals
                   # https://stackoverflow.com/questions/3443687/formatting-decimal-places-in-r
-                  title_text = paste(format(round(WATERDEPTHS_UNISPEED[i] - 2.1, 2), nsmall = 2), "m"),
+                  title_text = paste("+", format(round(WATERDEPTHS_UNISPEED[i] - (MEAN_SEA_LEVEL + EPSILON), 2), nsmall = 2), "m"),
                   title_position = "northeast",
                   title_font = "Helvetica",
                   title_size = 90,
@@ -301,21 +370,23 @@ for (i in seq_len(FRAMES_NUM/2)) {
 
 ```{r}
 # generate .png frame images
-img_frames_rise <- paste0("VH_Top_uni_editedDTM/VHTop_", seq_len(FRAMES_NUM/2), ".png")
+
+
+img_frames_rise <- paste0("VH_Top_uni_Lands10m_smooth/VHTop_", seq_len(FRAMES_NUM/2), ".png")
 
 img_frame_sequence <- c(
   # rising
   img_frames_rise,
   # stop at top for 0.5 sec
-  rep(paste0("VH_Top_uni_editedDTM/VHTop_", FRAMES_NUM/2, ".png"), 6),
+  rep(paste0("VH_Top_uni_Lands10m_smooth/VHTop_", FRAMES_NUM/2, ".png"), 12),
   # dropping
   rev(img_frames_rise),
   # stop at bottom for 0.5 sec
-  rep(paste0("VH_Top_uni_editedDTM/VHTop_", 1, ".png"), 6))
+  rep(paste0("VH_Top_uni_Lands10m_smooth/VHTop_", 1, ".png"), 12))
 
 # write video
 magick::image_write_video(magick::image_read(img_frame_sequence), 
-                          path = "VH_sealevel_Top_uni_editedDTM.mp4", 
+                          path = "VH_sealevel_Top_uni_Lands10m_smooth.mp4", 
                           framerate = 12)
 ```
 
@@ -331,7 +402,7 @@ img_frames <- paste0("VH_Axo_uni/VHAxo_", seq_len(FRAMES_NUM), ".png")
 for (i in seq_len(FRAMES_NUM/2)) {
   message(paste(" - Generating image", i, "of", FRAMES_NUM))
           
-  message(paste(" - Sea level of", format(round(WATERDEPTHS_UNISPEED[i] - 0.1, 2), nsmall = 2), "m"))
+  message(paste(" - Sea level of", format(round(WATERDEPTHS_UNISPEED[i] - (MEAN_SEA_LEVEL + EPSILON), 2), nsmall = 2), "m"))
   
   start_time <- Sys.time()
 
@@ -352,10 +423,10 @@ for (i in seq_len(FRAMES_NUM/2)) {
   
   # Render final view
   render_snapshot(img_frames[i],
-                  # In DTM, the base sea level about 2.1m (assume it equal to 0mPD)
+                  
                   # Fix to always have 2 decimals
                   # https://stackoverflow.com/questions/3443687/formatting-decimal-places-in-r
-                  title_text = paste(format(round(WATERDEPTHS_UNISPEED[i] - 2.1, 2), nsmall = 2), "m"),
+                  title_text = paste(format(round(WATERDEPTHS_UNISPEED[i] - (MEAN_SEA_LEVEL + EPSILON), 2), nsmall = 2), "m"),
                   title_position = "northeast",
                   title_font = "Helvetica",
                   title_size = 72,
@@ -377,17 +448,17 @@ magick::image_write_video(magick::image_read(img_frames),
 
 ```{r}
 # generate .png frame images
-img_frames_rise <- paste0("VH_Axo_uni_editedDTM/VHTop_", seq_len(FRAMES_NUM/2), ".png")
+img_frames_rise <- paste0("VH_Axo_uni_editedDTM/VHAxo_", seq_len(FRAMES_NUM/2), ".png")
 
 img_frame_sequence <- c(
   # rising
   img_frames_rise,
   # stop at top for 0.5 sec
-  rep(paste0("VH_Axo_uni_editedDTM/VHAxo_", FRAMES_NUM/2, ".png"), 6),
+  rep(paste0("VH_Axo_uni_editedDTM/VHAxo_", FRAMES_NUM/2, ".png"), 12),
   # dropping
   rev(img_frames_rise),
   # stop at bottom for 0.5 sec
-  rep(paste0("VH_Axo_uni_editedDTM/VHAxo__", 1, ".png"), 6))
+  rep(paste0("VH_Axo_uni_editedDTM/VHAxo_", 1, ".png"), 12))
 
 # write video
 magick::image_write_video(magick::image_read(img_frame_sequence), 
@@ -447,4 +518,74 @@ magick::image_write_video(magick::image_read(img_frames),
                           path = "VH_sealevel_Axo_uni_phi_f30.mp4", 
                           framerate = 30)
 ```
+
+
+
+
+---
+
+## Area affected
+
+```{r}
+Lands_10m_above_sea_level <- Lands_10m_smooth_VH
+
+Lands_10m_above_sea_level[Lands_10m_above_sea_level <= 1.30] <- NA
+
+raster::hist(Lands_10m_above_sea_level, maxpixels = 1e5, breaks = seq(-25, 600, 5))
+```
+```{r}
+height_df <- raster::as.data.frame(Lands_10m_above_sea_level)
+```
+
+```{r}
+hist(height_df$layer)
+
+qplot(height_df$layer, binwidth = 1)
+
+```
+
+```{r}
+height_df_10m <- height_df %>% filter(layer <= 11.3)
+```
+
+
+
+```{r}
+ggplot(height_df_10m, aes(x = layer)) +
+  geom_histogram(binwidth = .05)
+```
+
+```{r}
+# Cumulative frequency
+
+ggplot(height_df_10m, aes(x = layer)) +
+  stat_ecdf() +
+  theme_bw()
+```
+
+```{r}
+# Cumulative counts
+# https://stackoverflow.com/questions/18379933/plotting-cumulative-counts-in-ggplot2
+
+ggplot(height_df_10m, aes(x = layer)) +
+  stat_bin(aes(y = cumsum(..count..) * 100 / 1e4), geom = "step", binwidth = .25, color = "#00868b") +
+  theme_bw() +
+  theme(
+    panel.spacing = unit(.1, "lines"),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank(),
+    strip.text = element_text(size = 8),
+    axis.title.x = element_text(size = 11),
+    axis.title.y = element_text(size = 11)
+  ) +
+  xlim(c(0, 10)) +
+  labs(
+    title = "Total flooded area when sea level rise from 0 to 10m",
+    x = "Rise in sea level (m)",
+    y = "Total flooded area (ha)"
+  )
+
+```
+
+
 
