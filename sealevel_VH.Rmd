@@ -526,39 +526,45 @@ magick::image_write_video(magick::image_read(img_frames),
 
 ## Area affected
 
-```{r}
+
+```{r, eval = FALSE}
+# Directly plot histogram with raster
+
 Lands_10m_above_sea_level <- Lands_10m_smooth_VH
 
 Lands_10m_above_sea_level[Lands_10m_above_sea_level <= 1.30] <- NA
 
 raster::hist(Lands_10m_above_sea_level, maxpixels = 1e5, breaks = seq(-25, 600, 5))
 ```
-```{r}
-height_df <- raster::as.data.frame(Lands_10m_above_sea_level)
-```
 
 ```{r}
-hist(height_df$layer)
+# convert to df
+# better option to deal with ggplot
 
-qplot(height_df$layer, binwidth = 1)
+height_df <- raster::as.data.frame(Lands_10m_smooth_VH)
 
-```
-
-```{r}
-height_df_10m <- height_df %>% filter(layer <= 11.3)
+colnames(height_df) <- c("height")
 ```
 
 
+```{r}
+# Lands DTM use HKPD as 0
+# Mean Sea Level defined by SMO is 1.30 mPD
+MEAN_SEA_LEVEL <- 1.30
+
+height_df_10m_above <- height_df %>%
+  filter(height > MEAN_SEA_LEVEL & height <= (MEAN_SEA_LEVEL + 10)) %>%
+  mutate(height_above_sea = height - MEAN_SEA_LEVEL)
+```
+
 
 ```{r}
-ggplot(height_df_10m, aes(x = layer)) +
+# Histogram
+ggplot(height_df_10m_above, aes(x = height_above_sea)) +
   geom_histogram(binwidth = .05)
-```
 
-```{r}
 # Cumulative frequency
-
-ggplot(height_df_10m, aes(x = layer)) +
+ggplot(height_df_10m_above, aes(x = height_above_sea)) +
   stat_ecdf() +
   theme_bw()
 ```
@@ -567,7 +573,7 @@ ggplot(height_df_10m, aes(x = layer)) +
 # Cumulative counts
 # https://stackoverflow.com/questions/18379933/plotting-cumulative-counts-in-ggplot2
 
-ggplot(height_df_10m, aes(x = layer)) +
+ggplot(height_df_10m_above, aes(x = height_above_sea)) +
   stat_bin(aes(y = cumsum(..count..) * 100 / 1e4), geom = "step", binwidth = .25, color = "#00868b") +
   theme_bw() +
   theme(
@@ -576,15 +582,33 @@ ggplot(height_df_10m, aes(x = layer)) +
     panel.grid.minor.x = element_blank(),
     strip.text = element_text(size = 8),
     axis.title.x = element_text(size = 11),
-    axis.title.y = element_text(size = 11)
+    axis.title.y = element_text(size = 11),
+    
+    # https://stackoverflow.com/questions/41105759/aligning-title-subtitle-and-caption-for-horizontal-ggplot-barchart
+    plot.caption = element_text(hjust = 0),
+    plot.caption.position = "plot"
   ) +
   xlim(c(0, 10)) +
   labs(
-    title = "Total flooded area when sea level rise from 0 to 10m",
-    x = "Rise in sea level (m)",
-    y = "Total flooded area (ha)"
+    title = "Total flooded area when sea level rises from 0 to 10m",
+    x = "Rise from mean sea level (m)",
+    y = "Total flooded area (ha)",
+    caption = "Mean sea level is defined as 1.30m above Hong Kong Principal Datum (HKPD)."
   )
 
+```
+
+
+```{r}
+
+# size of common place for comparison, in ha
+
+HIGH_ISLAND_RESORVOIR <- 541
+VICTORIA_PARK <- 19
+
+# Consider add vertical line the cumulative plot
+# https://stackoverflow.com/questions/12876501/r-ggplot2-labelling-a-horizontal-line-on-the-y-axis-with-a-numeric-value
+# + geom_hline(aes(yintercept = h))
 ```
 
 
